@@ -163,7 +163,6 @@ class MusicVideoGenerator:
 
         # Get segment durations from cut locations
         segment_durations = events.segment_durations
-
         (
             music_video_segments,
             rejected_video_segments,
@@ -218,7 +217,7 @@ class MusicVideoGenerator:
 
         return video_segments, rejected_video_segments
 
-    @use_temporary_file_fallback("output_path", ".mkv")
+    @use_temporary_file_fallback("output_path", ".mp4")
     def preview_from_events(self, events: Union[EventList, List[TIME_FORMAT]]):
         """
         Creates a new audio file with audible bleeps at event locations
@@ -229,7 +228,7 @@ class MusicVideoGenerator:
             Events to mark in the audio file.
 
         output_path
-            Path to save the output .wav or .mkv file
+            Path to save the output .wav or .mp4 file
 
         show_progress
             Whether to output progress information to stdout

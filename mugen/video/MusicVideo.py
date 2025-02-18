@@ -34,7 +34,6 @@ def requires_video_segments(func):
             raise ValueError(
                 f"MusicVideo's {func} method requires one or more segments."
             )
-
         return func(self, *args, **kwargs)
 
     return _requires_video_segments
@@ -190,7 +189,6 @@ class MusicVideo(Persistable):
         Use this method over moviepy's write_videofile to preserve the audio file's codec and bitrate.
         """
         composed_music_video = self.compose()
-
         temp_output_path = self.writer.write_video_clip_to_file(
             composed_music_video,
             audio=self.audio_file if self.audio_file else True,

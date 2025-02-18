@@ -38,6 +38,7 @@ class VideoSegment(Segment, VideoFileClip):
         self.source_start_time = 0
         if not self.fps:
             self.fps = Segment.DEFAULT_VIDEO_FPS
+        self.duration -= 1/self.fps
         self._streams = None
 
     def __repr__(self):
@@ -136,31 +137,68 @@ class VideoSegment(Segment, VideoFileClip):
         self, start_time: TIME_FORMAT = 0, end_time: TIME_FORMAT = None
     ) -> "VideoSegment":
         """
-        Parameters
-        ----------
-        start_time
-            Start time of the video segment in the source video file
+        Returns a clip playing the content of the current clip
+        between times ``start_time`` and ``end_time``, which can be expressed
+        in seconds (15.35), in (min, sec), in (hour, min, sec), or as a
+        string: '01:03:05.35'.
+        If ``end_time`` is not provided, it is assumed to be the duration
+        of the clip (potentially infinite).
+        If ``end_time`` is a negative value, it is reset to
+        ``clip.duration + end_time. ``. For instance: ::
 
-        end_time
-            End time of the video segment in the source video file
+            >>> # cut the last two seconds of the clip:
+            >>> newclip = clip.subclip(0,-2)
 
-        Returns
-        -------
-        A subclip of the original video segment, starting at 'start_time' and ending at 'end_time'
+        If ``end_time`` is provided or if the clip has a duration attribute,
+        the duration of the returned clip is set automatically.
+
+        The ``mask`` and ``audio`` of the resulting subclip will be
+        subclips of ``mask`` and ``audio`` the original clip, if
+        they exist.
         """
-        subclip = super().subclip(start_time, end_time)
+        if start_time < 0:
+            # Make this more Python-like, a negative value means to move
+            # backward from the end of the clip
+            start_time = self.duration + start_time   # Remember start_time is negative
+
+        if (self.duration is not None) and (start_time > self.duration):
+            raise ValueError("start_time (%.02f) " % start_time +
+                             "should be smaller than the clip's " +
+                             "duration (%.02f)." % self.duration)
+
+        newclip = self.fl_time(lambda t: t + start_time, apply_to=[])
+
+        if (end_time is None) and (self.duration is not None):
+
+            end_time = self.duration
+
+        elif (end_time is not None) and (end_time < 0):
+
+            if self.duration is None:
+
+                print("Error: subclip with negative times (here %s)" % (str((start_time, end_time)))
+                      + " can only be extracted from clips with a ``duration``")
+
+            else:
+
+                end_time = self.duration + end_time
+
+        if end_time is not None:
+
+            newclip.duration = end_time - start_time
+            newclip.end = newclip.start + newclip.duration
 
         # Clear filter results which are otherwise copied over to the new subclip
-        subclip.passed_filters = []
-        subclip.failed_filters = []
+        newclip.passed_filters = []
+        newclip.failed_filters = []
 
         if start_time < 0:
             # Set relative to end
             start_time = self.duration + start_time
 
-        subclip.source_start_time += start_time
+        newclip.source_start_time += start_time
 
-        return subclip
+        return newclip
 
     def trailing_buffer(self, duration) -> "VideoSegment":
         return VideoSegment(self.file).subclip(

@@ -107,6 +107,7 @@ def video_segment_has_low_contrast(
     """
     for frame in video_segment.first_middle_last_frames:
         if image_has_low_contrast(Image.fromarray(frame), *args, **kwargs):
+            print("Video segment has low contrast:", video_segment)
             return True
 
     return False

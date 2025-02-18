@@ -103,12 +103,10 @@ class VideoSource(Source):
             ]
         else:
             time_range_to_sample = TimeRange(0, self.segment.duration)
-
         start_time = random.uniform(
             time_range_to_sample.start, time_range_to_sample.end - duration
         )
         sampled_clip = self.segment.subclip(start_time, start_time + duration)
-
         return sampled_clip
 
 

@@ -81,7 +81,8 @@ class VideoWriter:
         output_path: Optional[str] = None,
         *,
         audio: Union[str, bool] = True,
-        show_progress: bool = True
+        show_progress: bool = True,
+        fps: int = 60
     ):
         """
         Writes a video clip to file in the specified directory
@@ -100,7 +101,6 @@ class VideoWriter:
         """
         ffmpeg_parameters = ["-crf", str(self.crf)] + self.ffmpeg_parameters
         audio_bitrate = str(self.audio_bitrate) + "k"
-
         video_clip.write_videofile(
             output_path,
             audio=audio,
@@ -111,6 +111,7 @@ class VideoWriter:
             ffmpeg_params=ffmpeg_parameters,
             verbose=False,
             logger=logger if show_progress else None,
+            fps=fps,
         )
 
         return output_path
