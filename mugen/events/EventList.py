@@ -238,7 +238,7 @@ class EventList(MugenList):
 
         return EventGroupList(groups, selected=selected_groups)
 
-    def group_by_slices(self, slices: Tuple[int, int]):
+    def group_by_slices(self, slices: List[Tuple[int, int]]):
         """
         Groups events by slices.
         Does not support negative indexing.

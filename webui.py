@@ -1,14 +1,20 @@
 import glob
 import json
 import os
+from typing import Tuple, List, Union, Any
 
 import gradio as gr
-from mugen import MusicVideoGenerator
+from pytesseract.pytesseract import TesseractNotFoundError
+
+from mugen import MusicVideoGenerator, VideoSourceList, VideoSource
 from mugen.video.filters import VideoFilter
 
 
 class UI:
     def __init__(self):
+        self.save_file = None
+        self.beats = None
+        self.generator = None
         self.clips_refresh_btn = None
         self.empty_clips_text = None
         self.clips_reload = None
@@ -33,29 +39,36 @@ class UI:
                 with gr.Accordion(label="Beat", open=self.settings["beat_open"]):
                     self.beat = gr.Number(label="Beat Interval", value=4, minimum=1, precision=0)
 
-                    self.preview_button = gr.Button("Generate Beat Preview", variant="primary")
+                    self.preview_button = gr.Button("Generate Beat Preview", variant="primary", interactive=False)
                     with gr.Accordion(label="Preview", open=False):
-                        self.preview = gr.Video(value="preview.mkv")
+                        self.preview = gr.Video()
 
             with gr.Row():
                 with gr.Accordion(label="Video Clips", open=True):
                     self.empty_clips_text = gr.Text("Add video clips to the Clips folder and click 'refresh'",
-                                                    visible=self.clips_is_empty(), show_label=False)
+                                                    visible=self.clips_is_empty(), show_label=False, container=False)
                     self.clips_refresh_btn = gr.Button("Refresh")
                     self.clips = gr.FileExplorer(label="Clips", ignore_glob="**/.*",
-                                                 glob="**/*.[am][vpk][4vi]", root_dir=".\\Clips")
+                                                 glob="**/*.[am][vpk][4vi]", root_dir=".\\Clips",
+                                                 file_count="multiple", interactive=False)
             with gr.Row():
-                self.generate_button = gr.Button("Generate", variant="primary")
+                self.generate_button = gr.Button("Generate", variant="primary", interactive=False)
             with gr.Row():
                 self.output = gr.Video(value="output.mkv")
 
-            self.preview_button.click(generate_preview, [self.audio, self.beat], [self.preview])
+            self.audio.upload(self.init_video_gen, inputs=[self.audio, self.beat],
+                              outputs=[self.preview_button, self.clips, self.generate_button])
+            self.audio.clear(self.de_init_video_gen, outputs=[self.preview_button, self.clips, self.generate_button])
+
+            self.beat.change(self.init_beats_from_speed, inputs=[self.beat])
+            self.preview_button.click(self.generate_preview, outputs=[self.preview])
 
             self.clips_refresh_btn.click(lambda: gr.update(root_dir=""),
                                          outputs=[self.clips]).then(self.refresh_clips,
                                                                     outputs=[self.empty_clips_text, self.clips])
+            self.clips.change(self.init_clips, [self.clips])
 
-            self.generate_button.click(generate, [self.audio, self.beat, self.clips], [self.output])
+            self.generate_button.click(self.generate, outputs=[self.output])
 
         self.demo.launch()
 
@@ -89,47 +102,48 @@ class UI:
 
     @staticmethod
     def clips_is_empty():
-        clip_glob = glob.glob(os.getcwd()+"\\Clips\\**/*.[am][vpk][4vi]")
+        clip_glob = glob.glob(os.getcwd()+"\\Clips\\**\\*.[am][vpk][4vi]", recursive=True)
         return len(clip_glob) == 0
 
     def refresh_clips(self):
         empty = self.clips_is_empty()
         return gr.update(visible=empty), gr.update(root_dir=".\\Clips")
 
+    def init_video_gen(self, file: str, interval: int):
+        self.save_file = file.replace('/', '\\').split('\\')[-1][:-4]
+        self.generator = MusicVideoGenerator(audio_file=file)
+        self.init_beats_from_speed(interval)
+        return gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True)
 
-def generate_preview(audio_file, beat):
-    if audio_file is not None:
-        if beat is not None:
-            generator = MusicVideoGenerator(audio_file)
-            beats = generator.audio.beats()
-            beats.speed_multiply(1 / beat)
+    @staticmethod
+    def de_init_video_gen():
+        return gr.update(interactive=False), gr.update(interactive=False, value=[]), gr.update(interactive=False)
 
-            preview = generator.preview_from_events(beats)
-            print(preview.write_to_video_file("preview.mkv"))
-        else:
-            gr.Warning("No beat interval given!")
-    else:
-        gr.Warning("No audio file chosen!")
-    return "preview.mkv"
+    def init_beats_from_speed(self, interval: int):
+        self.beats = self.generator.audio.beats()
+        self.beats.speed_multiply(1 / interval)
 
+    def init_beats_from_slices(self, slices: List[Tuple[int, int, float]]):
+        beats = self.generator.audio.beats()
+        beat_groups = beats.group_by_slices([(start, end) for start, end, _ in slices])
+        beat_groups.selected_groups.speed_multiply([speed for _, _, speed in slices])
+        self.beats = beat_groups.flatten()
 
-def generate(audio_file, beat, clips):
-    if audio_file is not None:
-        if beat is not None:
-            generator = MusicVideoGenerator(audio_file, clips)
-            generator.exclude_video_filters = [VideoFilter.not_is_repeat.name, VideoFilter.not_has_cut.name,
-                                               VideoFilter.not_has_text.name]
-            beats = generator.audio.beats()
-            beats.speed_multiply(1 / beat)
+    def init_clips(self, clips: Union[VideoSourceList, List[str]]):
+        self.generator.video_sources = VideoSourceList(clips)
 
-            video = generator.generate_from_events(beats)
-            save_name = audio_file.replace('/', '\\').split('\\')[-1][:-4]
-            video.save(f"MusicVideos\\{save_name}.pickle")
-            return video.write_to_video_file(f"MusicVideos\\{save_name}.mkv")
-        else:
-            raise gr.Error("No beat interval given!")
-    else:
-        raise gr.Error("No audio file chosen!")
+    def generate(self):
+        try:
+            video = self.generator.generate_from_events(self.beats)
+        except TesseractNotFoundError:
+            raise gr.Error("Tesseract not installed to be able to run text filters")
+        video.save(f"MusicVideos\\{self.save_file}.pickle")
+        return video.write_to_video_file(f"MusicVideos\\{self.save_file}.mkv")
+
+    def generate_preview(self):
+        preview = self.generator.preview_from_events(self.beats)
+        preview.write_to_video_file("preview.mkv")
+        return "preview.mkv"
 
 
 UI().launch()
