@@ -108,7 +108,7 @@ class Crossfade(VideoEffect):
         super().__init__(duration=duration, **kwargs)
 
     def apply(self, segment, previous_segment):
-        segment = segment.set_start(previous_segment.end - self.duration)
+        segment = segment.with_start(previous_segment.end - self.duration)
         segment = segment.crossfadein(self.duration)
         if segment.audio:
             segment = segment.set_audio(segment.audio.audio_fadein(self.duration))

@@ -1,4 +1,4 @@
-import moviepy.editor as moviepy
+import moviepy as moviepy
 
 
 class CompositeVideoClip(moviepy.CompositeVideoClip):

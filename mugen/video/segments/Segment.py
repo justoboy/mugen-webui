@@ -2,7 +2,7 @@ import copy
 from abc import ABC, abstractmethod
 from typing import List
 
-from moviepy.editor import VideoClip
+from moviepy import VideoClip
 
 from mugen.mixins.Filterable import Filterable
 from mugen.mixins.Persistable import Persistable

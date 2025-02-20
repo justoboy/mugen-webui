@@ -3,10 +3,11 @@ from typing import List, Tuple
 import mugen.video.sizing as sizing
 from mugen.video.effects import Crossfade
 from mugen.video.segments.Segment import Segment
+from mugen.video.segments.VideoSegment import VideoSegment
 from mugen.video.sizing import Dimensions
 
 
-def crop_to_aspect_ratio(segment: Segment, aspect_ratio: float) -> Segment:
+def crop_to_aspect_ratio(segment: VideoSegment, aspect_ratio: float) -> Segment:
     """
     Returns
     -------
@@ -19,12 +20,12 @@ def crop_to_aspect_ratio(segment: Segment, aspect_ratio: float) -> Segment:
         x1, y1, x2, y2 = sizing.crop_coordinates_for_aspect_ratio(
             segment.dimensions, aspect_ratio
         )
-        segment = segment.crop(x1=x1, y1=y1, x2=x2, y2=y2)
+        segment = segment.cropped(x1=x1, y1=y1, x2=x2, y2=y2)
 
     return segment
 
 
-def crop_scale(segment: Segment, dimensions: Tuple[int, int]) -> Segment:
+def crop_scale(segment: VideoSegment, dimensions: Tuple[int, int]) -> Segment:
     """
     Returns
     -------
@@ -39,7 +40,7 @@ def crop_scale(segment: Segment, dimensions: Tuple[int, int]) -> Segment:
 
     if segment.dimensions != dimensions:
         # Resize segment to reach final dimensions
-        segment = segment.resize(dimensions)
+        segment = segment.resized(dimensions)
 
     return segment
 

@@ -6,7 +6,7 @@ from typing import Tuple, List, Union, Any
 import gradio as gr
 from pytesseract.pytesseract import TesseractNotFoundError
 
-from mugen import MusicVideoGenerator, VideoSourceList, VideoSource
+from mugen import MusicVideoGenerator, VideoSourceList
 from mugen.video.filters import VideoFilter
 
 
@@ -102,7 +102,7 @@ class UI:
 
     @staticmethod
     def clips_is_empty():
-        clip_glob = glob.glob(os.getcwd()+"\\Clips\\**\\*.[am][vpk][4vi]", recursive=True)
+        clip_glob = glob.glob(os.getcwd() + "\\Clips\\**\\*.[am][vpk][4vi]", recursive=True)
         return len(clip_glob) == 0
 
     def refresh_clips(self):
@@ -120,6 +120,7 @@ class UI:
         return gr.update(interactive=False), gr.update(interactive=False, value=[]), gr.update(interactive=False)
 
     def init_beats_from_speed(self, interval: int):
+        self.update_settings({"beat_interval": interval})
         self.beats = self.generator.audio.beats()
         self.beats.speed_multiply(1 / interval)
 
@@ -137,8 +138,10 @@ class UI:
             video = self.generator.generate_from_events(self.beats)
         except TesseractNotFoundError:
             raise gr.Error("Tesseract not installed to be able to run text filters")
-        video.save(f"MusicVideos\\{self.save_file}.pickle")
-        return video.write_to_video_file(f"MusicVideos\\{self.save_file}.mkv")
+        if not os.path.exists(os.getcwd()+"\\MusicVideos"):
+            os.mkdir(os.getcwd()+"\\MusicVideos")
+        video.save(os.getcwd()+f"\\MusicVideos\\{self.save_file}.pickle")
+        return video.write_to_video_file(os.getcwd()+f"\\MusicVideos\\{self.save_file}.mkv")
 
     def generate_preview(self):
         preview = self.generator.preview_from_events(self.beats)

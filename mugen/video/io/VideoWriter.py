@@ -1,7 +1,7 @@
 import os
 from typing import List, Optional, Union
 
-from moviepy.editor import VideoClip
+from moviepy import VideoClip
 from tqdm import tqdm
 
 from mugen.utilities.logger import logger
@@ -109,7 +109,6 @@ class VideoWriter:
             audio_codec=self.audio_codec,
             audio_bitrate=audio_bitrate,
             ffmpeg_params=ffmpeg_parameters,
-            verbose=False,
             logger=logger if show_progress else None,
             fps=fps,
         )

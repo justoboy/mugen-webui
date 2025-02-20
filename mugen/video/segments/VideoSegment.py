@@ -166,7 +166,7 @@ class VideoSegment(Segment, VideoFileClip):
                              "should be smaller than the clip's " +
                              "duration (%.02f)." % self.duration)
 
-        newclip = self.fl_time(lambda t: t + start_time, apply_to=[])
+        newclip = self.time_transform(lambda t: t + start_time, apply_to=[])
 
         if (end_time is None) and (self.duration is not None):
 

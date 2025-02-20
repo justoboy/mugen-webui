@@ -3,7 +3,7 @@ import os
 from functools import wraps
 from typing import List, Optional
 
-from moviepy.editor import AudioFileClip, VideoClip
+from moviepy import AudioFileClip, VideoClip
 
 from mugen.events.Event import Event
 from mugen.events.EventList import EventList
@@ -159,7 +159,7 @@ class MusicVideo(Persistable):
         for index, segment in enumerate(segments[1:]):
             # Start current segment where previous segment ends in composite video
             previous_segment = composite_video_segments[index]
-            segment = segment.set_start(previous_segment.end)
+            segment = segment.with_start(previous_segment.end)
             segment = transformation.apply_contextual_effects(segment, previous_segment)
             composite_video_segments.append(segment)
 
