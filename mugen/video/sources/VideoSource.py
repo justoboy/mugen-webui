@@ -153,9 +153,38 @@ class FilteredVideoSource(Taggable, Weightable, ABC):
             #     self.segments[duration].append(FilteredVideoSegment(self.length-duration, self.length))
 
     def filter_segments(self, filters: List[Filter]):
-        for duration in self.segments.values():
-            for segment in duration:
-                segment.filter(filters)
+        has_filters = []
+        not_has_filters = []
+        for video_filter in filters:
+            if video_filter.name.startswith("not"):
+                not_has_filters.append(video_filter)
+            else:
+                has_filters.append(video_filter)
+
+        durations = list(self.segments.keys())
+        durations.sort(reverse=True)
+
+        for duration in durations:
+            for segment in self.segments[duration]:
+                segment.filter(not_has_filters)
+                for sub_duration in durations[1:]:
+                    for sub_segment in self.segments[sub_duration]:
+                        if segment.contains_segment(sub_segment):
+                            for video_filter in not_has_filters:
+                                if "repeat" not in video_filter.name:
+                                    sub_segment.filters[video_filter.name] = segment.filters[video_filter.name]
+
+        durations.sort()
+
+        for duration in durations:
+            for segment in self.segments[duration]:
+                segment.filter(has_filters)
+                for super_duration in durations[1:]:
+                    for super_segment in self.segments[super_duration]:
+                        if super_segment.contains_segment(segment):
+                            for video_filter in has_filters:
+                                if "repeat" not in video_filter.name:
+                                    super_segment.filters[video_filter.name] = segment.filters[video_filter.name]
 
     def get_filtered_segments(self, duration: float, filters: List[Filter])\
             -> List[FilteredVideoSegment]:

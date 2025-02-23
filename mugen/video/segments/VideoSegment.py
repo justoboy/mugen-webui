@@ -254,6 +254,12 @@ class FilteredVideoSegment:
             segment.end,
         )
 
+    def contains_segment(self, segment: "FilteredVideoSegment") -> bool:
+        if not self.file == segment.file:
+            return False
+
+        return self.start <= segment.start and self.end >= segment.end
+
     def passes_filters(self, video_filters: List[Filter]):
         for video_filter in video_filters:
             if video_filter.name not in self.filters:
