@@ -52,15 +52,15 @@ Creates a more user-friendly experience.
 
 Generates a preview video switching between a black and a white screen with an audible tone at each beat location.
 
+**Video Filters**
+
+Options for which video filters to use when choosing valid video clips.
+
 **Generate**
 
 Generates a music video with the selected audio file, video clips, and generation options.
 
 ## Planned Features
-
-**Video Filters**
-
-Options for which video filters to use when choosing valid video clips.
 
 **Pre-process Clips**
 
