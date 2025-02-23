@@ -6,6 +6,7 @@ from moviepy.audio.io.AudioFileClip import AudioFileClip
 from moviepy.video.io.ffmpeg_reader import FFMPEG_VideoReader
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
+from mugen import Filter
 from mugen.constants import TIME_FORMAT
 from mugen.utilities import conversion, general, system
 from mugen.utilities.conversion import convert_time_to_seconds
@@ -38,7 +39,7 @@ class VideoSegment(Segment, VideoFileClip):
         self.source_start_time = 0
         if not self.fps:
             self.fps = Segment.DEFAULT_VIDEO_FPS
-        self.duration -= 1/self.fps
+        self.duration -= 1 / self.fps
         self._streams = None
 
     def __repr__(self):
@@ -134,7 +135,7 @@ class VideoSegment(Segment, VideoFileClip):
 
     @convert_time_to_seconds(["start_time", "end_time"])
     def subclip(
-        self, start_time: TIME_FORMAT = 0, end_time: TIME_FORMAT = None
+            self, start_time: TIME_FORMAT = 0, end_time: TIME_FORMAT = None
     ) -> "VideoSegment":
         """
         Returns a clip playing the content of the current clip
@@ -159,7 +160,7 @@ class VideoSegment(Segment, VideoFileClip):
         if start_time < 0:
             # Make this more Python-like, a negative value means to move
             # backward from the end of the clip
-            start_time = self.duration + start_time   # Remember start_time is negative
+            start_time = self.duration + start_time  # Remember start_time is negative
 
         if (self.duration is not None) and (start_time > self.duration):
             raise ValueError("start_time (%.02f) " % start_time +
@@ -184,7 +185,6 @@ class VideoSegment(Segment, VideoFileClip):
                 end_time = self.duration + end_time
 
         if end_time is not None:
-
             newclip.duration = end_time - start_time
             newclip.end = newclip.start + newclip.duration
 
@@ -233,3 +233,44 @@ class VideoSegment(Segment, VideoFileClip):
             ]
         )
         return result.stdout
+
+
+class FilteredVideoSegment:
+    def __init__(self, file: str, start: float, end: float):
+        self.file = file
+        self.start = start
+        self.end = end
+        self.filters = {"is_repeat": False, "not_is_repeat": True}
+
+    def overlaps_segment(self, segment: "FilteredVideoSegment") -> bool:
+        if not self.file == segment.file:
+            return False
+
+        return general.check_if_ranges_overlap(
+            self.start,
+            self.end,
+            segment.start,
+            segment.end,
+        )
+
+    def passes_filters(self, video_filters: List[Filter]):
+        for video_filter in video_filters:
+            if video_filter.name not in self.filters:
+                return False
+            if not self.filters[video_filter.name]:
+                return False
+        return True
+
+    @property
+    def segment(self) -> "VideoSegment":
+        return VideoSegment(self.file).subclip(self.start, self.end)
+
+    def filter(self, video_filters: List[Filter]):
+        for video_filter in video_filters:
+            if video_filter.name not in self.filters:
+                result = video_filter(self.segment)
+                self.filters[video_filter.name] = result
+                if video_filter.name.startswith("not_"):
+                    self.filters[video_filter.name[4:]] = not result
+                else:
+                    self.filters["not_"+video_filter.name] = not result
