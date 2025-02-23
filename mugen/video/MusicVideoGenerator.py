@@ -1,5 +1,5 @@
 import copy
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Union, Tuple
 
 from tqdm import tqdm
 
@@ -16,7 +16,7 @@ from mugen.video.MusicVideo import MusicVideo
 from mugen.video.segments.ColorSegment import ColorSegment
 from mugen.video.segments.VideoSegment import VideoSegment
 from mugen.video.sources.SourceSampler import SourceSampler
-from mugen.video.sources.VideoSource import VideoSource, VideoSourceList
+from mugen.video.sources.VideoSource import VideoSource, VideoSourceList, FilteredVideoSourceList
 
 
 class MusicVideoGenerator:
@@ -59,13 +59,13 @@ class MusicVideoGenerator:
 
     @convert_time_to_seconds(["duration"])
     def __init__(
-        self,
-        audio_file: Optional[str] = None,
-        video_sources: Optional[
-            Union[VideoSourceList, List[Union[VideoSource, str, List[Any]]]]
-        ] = None,
-        *,
-        duration: TIME_FORMAT = None,
+            self,
+            audio_file: Optional[str] = None,
+            video_sources: Optional[
+                Union[VideoSourceList, List[Union[VideoSource, str, List[Any]]]]
+            ] = None,
+            *,
+            duration: TIME_FORMAT = None,
     ):
         """
         Parameters
@@ -144,7 +144,10 @@ class MusicVideoGenerator:
         return self.audio.duration if self.audio else self._duration
 
     def generate_from_events(
-        self, events: Union[EventList, List[TIME_FORMAT]], show_progress: bool = True
+            self,
+            events: Union[EventList, List[TIME_FORMAT]],
+            use_filtered_sources: bool = False,
+            show_progress: bool = True
     ) -> MusicVideo:
         """
         Generates a MusicVideo from a list of events
@@ -155,6 +158,11 @@ class MusicVideoGenerator:
             Events corresponding to cuts which occur in the music video.
             Either a list of events or event locations.
 
+        use_filtered_sources
+            Whether to use the FilteredVideo(SourceList, Source, Segment) classes instead of the default classes.
+            Increases process time on larger sets of video sources, but ensures that an error is thrown on smaller
+            sets of video sources if no more valid segments are available instead of getting stuck in infinite loop.
+
         show_progress
             Whether to output progress information to stdout
         """
@@ -163,12 +171,10 @@ class MusicVideoGenerator:
 
         # Get segment durations from cut locations
         segment_durations = events.segment_durations
-        (
-            music_video_segments,
-            rejected_video_segments,
-        ) = self._generate_music_video_segments(
-            segment_durations, show_progress=show_progress
-        )
+        generator = self._generate_music_video_from_filtered_sources\
+            if use_filtered_sources else self._generate_music_video_segments
+
+        music_video_segments, rejected_video_segments = generator(segment_durations, show_progress=show_progress)
 
         # Assemble music video from music video segments and audio
         music_video = MusicVideo(
@@ -180,8 +186,8 @@ class MusicVideoGenerator:
         return music_video
 
     def _generate_music_video_segments(
-        self, durations: List[float], *, show_progress: bool = True
-    ) -> List[VideoSegment]:
+            self, durations: List[float], *, show_progress: bool = True
+    ) -> Tuple[List[VideoSegment], List[VideoSegment]]:
         """
         Generates a list of sampled video segments which pass all trait filters
 
@@ -214,6 +220,35 @@ class MusicVideoGenerator:
             ) = source_sampler.sample_with_filters(duration, video_filters)
             video_segments.append(next_video_segment)
             rejected_video_segments.extend(next_rejected_video_segments)
+
+        return video_segments, rejected_video_segments
+
+    def _generate_music_video_from_filtered_sources(
+            self, durations: List[float], *, show_progress: bool = True
+    ) -> Tuple[List[VideoSegment], List[VideoSegment]]:
+        """
+        Generates a list of sampled video segments which pass all trait filters using filtered sources
+
+        Parameters
+        ----------
+        durations
+            durations for each sampled video segment
+
+        show_progress
+            Whether to output progress information to stdout
+
+        Returns
+        -------
+        Sampled video segments
+        """
+        video_segments = []
+        video_sources = FilteredVideoSourceList(self.video_sources, durations, self.video_filters)
+        video_sources.filter_sources(show_progress)
+
+        for duration in tqdm(durations, disable=not show_progress):
+            video_segments.append(video_sources.sample(duration, self.video_filters))
+
+        rejected_video_segments = video_sources.get_rejected_segments()
 
         return video_segments, rejected_video_segments
 

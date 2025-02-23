@@ -1,0 +1,2 @@
+class SegmentNotFoundError(Exception):
+    pass

@@ -12,6 +12,7 @@ from mugen.video.filters import VideoFilter
 
 class UI:
     def __init__(self):
+        self.pre_process_clips = None
         self.clip_filters = None
         self.has_low_contrast = None
         self.has_cut = None
@@ -34,6 +35,7 @@ class UI:
             "beat_open": True,
             "beat_interval": 4,
             "filter_open": False,
+            "pre_process_clips": False,
             "allow_repeats": False,
             "has_text": "Off",
             "has_cut": "Exclude",
@@ -47,7 +49,7 @@ class UI:
                 self.audio = gr.File(file_types=["audio"], label="Music")
             with gr.Row():
                 with gr.Accordion(label="Beat", open=self.settings["beat_open"]):
-                    self.beat = gr.Number(label="Beat Interval", value=4, minimum=1, precision=0)
+                    self.beat = gr.Number(label="Beat Interval", value=4, minimum=1, precision=0, interactive=False)
 
                     self.preview_button = gr.Button("Generate Beat Preview", variant="primary", interactive=False)
                     with gr.Accordion(label="Preview", open=False):
@@ -65,25 +67,29 @@ class UI:
             with gr.Row():
                 with gr.Accordion(label="Clip Filters", open=self.settings["filter_open"]) as acc:
                     self.clip_filters = acc
-                    self.allow_repeats = gr.Checkbox(label="Allow Repeats", value=self.settings['allow_repeats'])
-                    filter_states = ['Include', 'Off', 'Exclude']
-                    try:
-                        version = get_tesseract_version()
-                        print(f"Tesseract version: {version}")
-                        tesseract_installed = True
-                    except TesseractNotFoundError:
-                        tesseract_installed = False
-                        self.update_settings({"has_text": "Off"})
-                    self.has_text = gr.Radio(choices=filter_states,
-                                             label="Has Text",
-                                             value=self.settings['has_text'],
-                                             interactive=tesseract_installed)
-                    self.has_cut = gr.Radio(choices=filter_states,
-                                            label="Has Cut",
-                                            value=self.settings['has_cut'])
-                    self.has_low_contrast = gr.Radio(choices=filter_states,
-                                                     label="Has Low Contrast",
-                                                     value=self.settings['has_low_contrast'])
+                    with gr.Row():
+                        self.pre_process_clips = gr.Checkbox(label="Pre-Process Clips",
+                                                             value=self.settings['pre_process_clips'])
+                    with gr.Row():
+                        self.allow_repeats = gr.Checkbox(label="Allow Repeats", value=self.settings['allow_repeats'])
+                        filter_states = ['Include', 'Off', 'Exclude']
+                        try:
+                            version = get_tesseract_version()
+                            print(f"Tesseract version: {version}")
+                            tesseract_installed = True
+                        except TesseractNotFoundError:
+                            tesseract_installed = False
+                            self.update_settings({"has_text": "Off"})
+                        self.has_text = gr.Radio(choices=filter_states,
+                                                 label="Has Text",
+                                                 value=self.settings['has_text'],
+                                                 interactive=tesseract_installed)
+                        self.has_cut = gr.Radio(choices=filter_states,
+                                                label="Has Cut",
+                                                value=self.settings['has_cut'])
+                        self.has_low_contrast = gr.Radio(choices=filter_states,
+                                                         label="Has Low Contrast",
+                                                         value=self.settings['has_low_contrast'])
 
             with gr.Row():
                 self.generate_button = gr.Button("Generate", variant="primary", interactive=False)
@@ -91,10 +97,13 @@ class UI:
                 self.output = gr.Video(value="output.mkv")
 
             self.audio.upload(self.init_video_gen, inputs=[self.audio, self.beat],
-                              outputs=[self.preview_button, self.clips, self.generate_button])
-            self.audio.clear(self.de_init_video_gen, outputs=[self.preview_button, self.clips, self.generate_button])
+                              outputs=[self.beat, self.preview_button, self.clips, self.generate_button])
+            self.audio.clear(self.de_init_video_gen,
+                             outputs=[self.beat, self.preview_button, self.clips, self.generate_button])
 
-            self.beat.change(self.init_beats_from_speed, inputs=[self.beat])
+            self.beat.change(self.init_beats_from_speed,
+                             inputs=[self.beat],
+                             outputs=[self.preview_button, self.generate_button])
             self.preview_button.click(self.generate_preview, outputs=[self.preview])
 
             self.clips_refresh_btn.click(lambda: gr.update(root_dir=""),
@@ -102,6 +111,8 @@ class UI:
                                                                     outputs=[self.empty_clips_text, self.clips])
             self.clips.change(self.init_clips, [self.clips])
 
+            self.pre_process_clips.change(lambda x: self.update_settings({'pre_process_clips': x}),
+                                          inputs=self.pre_process_clips)
             if not tesseract_installed:
                 self.clip_filters.expand(self.warn_tesseract)
             self.allow_repeats.change(self.change_allow_repeats, inputs=[self.allow_repeats])
@@ -109,7 +120,7 @@ class UI:
             self.has_cut.change(self.change_filters, inputs=[self.has_text, self.has_cut, self.has_low_contrast])
             self.has_low_contrast.change(self.change_filters, inputs=[self.has_text, self.has_cut, self.has_low_contrast])
 
-            self.generate_button.click(self.generate, outputs=[self.output])
+            self.generate_button.click(self.generate, inputs=[self.pre_process_clips], outputs=[self.output])
 
         self.demo.launch()
 
@@ -154,16 +165,23 @@ class UI:
         self.save_file = file.replace('/', '\\').split('\\')[-1][:-4]
         self.generator = MusicVideoGenerator(audio_file=file)
         self.init_beats_from_speed(interval)
-        return gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True)
+        return (gr.update(interactive=True),
+                gr.update(interactive=True),
+                gr.update(interactive=True),
+                gr.update(interactive=True))
 
     @staticmethod
     def de_init_video_gen():
-        return gr.update(interactive=False), gr.update(interactive=False, value=[]), gr.update(interactive=False)
+        return (gr.update(interactive=False),
+                gr.update(interactive=False),
+                gr.update(interactive=False, value=[]),
+                gr.update(interactive=False))
 
     def init_beats_from_speed(self, interval: int):
         self.update_settings({"beat_interval": interval})
         self.beats = self.generator.audio.beats()
         self.beats.speed_multiply(1 / interval)
+        return gr.update(), gr.update()
 
     def init_beats_from_slices(self, slices: List[Tuple[int, int, float]]):
         beats = self.generator.audio.beats()
@@ -185,7 +203,7 @@ class UI:
     def change_filters(self, text, cut, contrast):
         self.update_settings({"has_text": text, "has_cut": cut, "has_low_contrast": contrast})
 
-    def generate(self, progress=gr.Progress(track_tqdm=True)):
+    def generate(self, pre_process_clips: bool, progress=gr.Progress(track_tqdm=True)):
         filters = []
         if not self.settings["allow_repeats"]:
             filters.append(VideoFilter.not_is_repeat.name)
@@ -203,7 +221,7 @@ class UI:
             filters.append(VideoFilter.not_has_text.name)
         self.generator.video_filters = filters
         try:
-            video = self.generator.generate_from_events(self.beats)
+            video = self.generator.generate_from_events(events=self.beats, use_filtered_sources=pre_process_clips)
         except TesseractNotFoundError:
             raise gr.Error("Tesseract not installed to be able to run text filters")
         if not os.path.exists(os.getcwd()+"\\MusicVideos"):

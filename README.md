@@ -56,15 +56,17 @@ Generates a preview video switching between a black and a white screen with an a
 
 Options for which video filters to use when choosing valid video clips.
 
+**Pre-process Clips**
+
+Force the pre-processing of video filters on selected video clips, throwing an error if there aren't enough valid clips to avoid the infinite process bug.
+
+
 **Generate**
 
 Generates a music video with the selected audio file, video clips, and generation options.
 
 ## Planned Features
 
-**Pre-process Clips**
-
-Force the pre-processing of video filters on selected video clips, ensuring to ensure there will be enough footage if the `not_is_repeat` filter is enabled and avoid infinite process bug.
 
 **Use Beat Groups**
 

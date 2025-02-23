@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, NamedTuple, Optional, Tuple, Union
 
 from numpy.random import choice
+from tqdm import tqdm
 
 from mugen import Filter
 from mugen.constants import TIME_FORMAT
@@ -15,6 +16,7 @@ from mugen.mixins.Taggable import Taggable
 from mugen.mixins.Weightable import Weightable
 from mugen.utilities import system
 from mugen.utilities.conversion import convert_time_to_seconds
+from mugen.video.exceptions import SegmentNotFoundError
 from mugen.video.segments.VideoSegment import VideoSegment, FilteredVideoSegment
 from mugen.video.sources.Source import Source, SourceList
 
@@ -144,8 +146,8 @@ class FilteredVideoSource(Taggable, Weightable, ABC):
         for duration in durations:
             self.segments[duration] = []
             i = 0
-            while i < video_segment.duration + duration:
-                self.segments[duration].append(FilteredVideoSegment(i, i + duration))
+            while i < video_segment.duration - duration:
+                self.segments[duration].append(FilteredVideoSegment(file, i, i + duration))
                 i += duration
             # if i < self.length:
             #     self.segments[duration].append(FilteredVideoSegment(self.length-duration, self.length))
@@ -194,6 +196,14 @@ class FilteredVideoSource(Taggable, Weightable, ABC):
         sample = self.sample_segment(selected_segment)
 
         return sample
+
+    def get_rejected_segments(self):
+        rejected_segments = []
+        for duration in self.segments.values():
+            for segment in duration:
+                if segment.rejected:
+                    rejected_segments.append(segment.segment)
+        return rejected_segments
 
 
 class VideoSourceList(SourceList):
@@ -438,8 +448,8 @@ class FilteredVideoSourceList(SourceList):
 
         return sources
 
-    def filter_sources(self):
-        for source in self:
+    def filter_sources(self, show_progress: bool = True):
+        for source in tqdm(self, disable=not show_progress):
             source.filter_segments(self.filters)
 
     def get_filtered_sources(self, duration: float, filters: Optional[List[Filter]] = None)\
@@ -469,6 +479,10 @@ class FilteredVideoSourceList(SourceList):
         A randomly sampled segment with the specified duration that passes all specified filters
         """
         sources = self.get_filtered_sources(duration, filters)
+        if len(sources) == 0:
+            raise SegmentNotFoundError(f"Unable to find FilteredVideoSegment that passes given filters: {filters}\n"
+                                       "Try adding more video sources or removing some filters "
+                                       "(not_is_repeat and not_has_cut are the most likely to cause this)")
         weights = [source.weight for source in sources]
         weight_sum = sum(weights)
         normalized_weights = [weight / weight_sum for weight in weights]
@@ -476,3 +490,9 @@ class FilteredVideoSourceList(SourceList):
         sample = selected_source.sample(duration, filters)
 
         return sample
+
+    def get_rejected_segments(self) -> List[VideoSegment]:
+        rejected_segments = []
+        for source in self:
+            rejected_segments.extend(source.get_rejected_segments())
+        return rejected_segments

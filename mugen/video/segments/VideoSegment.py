@@ -241,6 +241,7 @@ class FilteredVideoSegment:
         self.start = start
         self.end = end
         self.filters = {"is_repeat": False, "not_is_repeat": True}
+        self.rejected = None
 
     def overlaps_segment(self, segment: "FilteredVideoSegment") -> bool:
         if not self.file == segment.file:
@@ -256,10 +257,17 @@ class FilteredVideoSegment:
     def passes_filters(self, video_filters: List[Filter]):
         for video_filter in video_filters:
             if video_filter.name not in self.filters:
+                self.reject()
                 return False
             if not self.filters[video_filter.name]:
+                self.reject()
                 return False
+        self.rejected = False
         return True
+
+    def reject(self):
+        if self.rejected is None:
+            self.rejected = True
 
     @property
     def segment(self) -> "VideoSegment":
@@ -273,4 +281,4 @@ class FilteredVideoSegment:
                 if video_filter.name.startswith("not_"):
                     self.filters[video_filter.name[4:]] = not result
                 else:
-                    self.filters["not_"+video_filter.name] = not result
+                    self.filters["not_" + video_filter.name] = not result
