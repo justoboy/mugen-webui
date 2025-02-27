@@ -19,3 +19,4 @@ call .\venv\Scripts\activate.bat
 :: Upgrade pip and install required packages
 python -m pip install --upgrade pip
 python -m pip install -r .\requirements.txt
+pause
