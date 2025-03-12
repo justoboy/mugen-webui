@@ -10,8 +10,57 @@ from mugen import MusicVideoGenerator, VideoSourceList
 from mugen.video.filters import VideoFilter
 
 
+class BeatGroups:
+    def __init__(self, end=5):
+        self.end = end
+        self.slices = gr.State(self.generate_slices_from_end(end))
+
+        @gr.render(inputs=self.slices)
+        def build(slices):
+            sliders = []
+            for i in range(len(slices)):
+                chunk_start = slices[i]['start']
+                if i == len(slices) - 1:
+                    self.end = chunk_end = chunk_value = slices[i]['end']
+                    print(chunk_start, chunk_end)
+                    gr.Slider(label=f"({chunk_start}, {chunk_end})",
+                              minimum=chunk_start + 1,
+                              maximum=chunk_end,
+                              value=chunk_value,
+                              step=1,
+                              interactive=False)
+                else:
+                    chunk_end = slices[i + 1]['end'] - 2
+                    chunk_value = slices[i]['end']
+                    sliders.append(gr.Slider(label=f"({chunk_start}, {chunk_end})",
+                                             minimum=chunk_start + 1,
+                                             maximum=chunk_end,
+                                             step=1,
+                                             value=chunk_value))
+
+            # noinspection PyTypeChecker
+            @gr.on(triggers=[slider.release for slider in sliders], inputs=sliders, outputs=self.slices)
+            def update_slices(*inputs):
+                new_slices = []
+                slice_end = -1
+                for i in range(len(inputs)):
+                    slice_start = int(slice_end + 1)
+                    slice_end = inputs[i]
+                    new_slices.append({'start': slice_start, 'end': slice_end})
+                new_slices.append({'start': int(slice_end + 1), 'end': self.end})
+                return new_slices
+
+    @staticmethod
+    def generate_slices_from_end(end):
+        midpoint = end // 2
+        return [{'start': 0, 'end': midpoint}, {'start': midpoint + 1, 'end': int(end)}]
+
+
 class UI:
     def __init__(self):
+        self.beat_groups = None
+        self.group_accordian = None
+        self.use_groups = None
         self.pre_process_clips = None
         self.clip_filters = None
         self.has_low_contrast = None
@@ -29,7 +78,7 @@ class UI:
         self.clips = None
         self.preview = None
         self.preview_button = None
-        self.beat = None
+        self.beat_interval = None
         self.audio = None
         self.default_settings = self.settings = {
             "beat_open": True,
@@ -49,7 +98,15 @@ class UI:
                 self.audio = gr.File(file_types=["audio"], label="Music")
             with gr.Row():
                 with gr.Accordion(label="Beat", open=self.settings["beat_open"]):
-                    self.beat = gr.Number(label="Beat Interval", value=4, minimum=1, precision=0, interactive=False)
+                    self.use_groups = gr.Checkbox(label="Use Groups", value=False, interactive=False)
+                    self.beat_interval = gr.Number(label="Beat Interval",
+                                                   value=4,
+                                                   minimum=1,
+                                                   precision=0,
+                                                   interactive=False)
+                    self.group_accordian = gr.Accordion(label="Groups", visible=False)
+                    with self.group_accordian:
+                        self.beat_groups = BeatGroups()
 
                     self.preview_button = gr.Button("Generate Beat Preview", variant="primary", interactive=False)
                     with gr.Accordion(label="Preview", open=False):
@@ -96,14 +153,32 @@ class UI:
             with gr.Row():
                 self.output = gr.Video(value="output.mkv")
 
-            self.audio.upload(self.init_video_gen, inputs=[self.audio, self.beat],
-                              outputs=[self.beat, self.preview_button, self.clips, self.generate_button])
+            self.audio.upload(self.init_video_gen, inputs=[self.audio, self.beat_interval, self.use_groups],
+                              outputs=[
+                                  self.beat_interval,
+                                  self.use_groups,
+                                  self.group_accordian,
+                                  self.beat_groups.slices,
+                                  self.preview_button,
+                                  self.clips,
+                                  self.generate_button
+                              ])
             self.audio.clear(self.de_init_video_gen,
-                             outputs=[self.beat, self.preview_button, self.clips, self.generate_button])
+                             outputs=[
+                                self.beat_interval,
+                                self.use_groups,
+                                self.group_accordian,
+                                self.preview_button,
+                                self.clips,
+                                self.generate_button
+                             ])
 
-            self.beat.change(self.init_beats_from_speed,
-                             inputs=[self.beat],
-                             outputs=[self.preview_button, self.generate_button])
+            self.use_groups.change(self.toggle_beat_groups,
+                                   inputs=self.use_groups,
+                                   outputs=[self.beat_interval, self.group_accordian])
+            self.beat_interval.change(self.init_beats_from_speed,
+                                      inputs=[self.beat_interval],
+                                      outputs=[self.preview_button, self.generate_button])
             self.preview_button.click(self.generate_preview, outputs=[self.preview])
 
             self.clips_refresh_btn.click(lambda: gr.update(root_dir=""),
@@ -118,7 +193,8 @@ class UI:
             self.allow_repeats.change(self.change_allow_repeats, inputs=[self.allow_repeats])
             self.has_text.change(self.change_filters, inputs=[self.has_text, self.has_cut, self.has_low_contrast])
             self.has_cut.change(self.change_filters, inputs=[self.has_text, self.has_cut, self.has_low_contrast])
-            self.has_low_contrast.change(self.change_filters, inputs=[self.has_text, self.has_cut, self.has_low_contrast])
+            self.has_low_contrast.change(self.change_filters,
+                                         inputs=[self.has_text, self.has_cut, self.has_low_contrast])
 
             self.generate_button.click(self.generate, inputs=[self.pre_process_clips], outputs=[self.output])
 
@@ -161,11 +237,14 @@ class UI:
         empty = self.clips_is_empty()
         return gr.update(visible=empty), gr.update(root_dir=".\\Clips")
 
-    def init_video_gen(self, file: str, interval: int):
+    def init_video_gen(self, file: str, interval: int, use_groups: bool):
         self.save_file = file.replace('/', '\\').split('\\')[-1][:-4]
         self.generator = MusicVideoGenerator(audio_file=file)
         self.init_beats_from_speed(interval)
         return (gr.update(interactive=True),
+                gr.update(interactive=True),
+                gr.update(visible=use_groups),
+                self.beat_groups.generate_slices_from_end(end=self.beats.end),
                 gr.update(interactive=True),
                 gr.update(interactive=True),
                 gr.update(interactive=True))
@@ -174,8 +253,14 @@ class UI:
     def de_init_video_gen():
         return (gr.update(interactive=False),
                 gr.update(interactive=False),
+                gr.update(visible=False),
+                gr.update(interactive=False),
                 gr.update(interactive=False, value=[]),
                 gr.update(interactive=False))
+
+    @staticmethod
+    def toggle_beat_groups(on: bool):
+        return gr.update(visible=not on), gr.update(visible=on)
 
     def init_beats_from_speed(self, interval: int):
         self.update_settings({"beat_interval": interval})
@@ -224,10 +309,10 @@ class UI:
             video = self.generator.generate_from_events(events=self.beats, use_filtered_sources=pre_process_clips)
         except TesseractNotFoundError:
             raise gr.Error("Tesseract not installed to be able to run text filters")
-        if not os.path.exists(os.getcwd()+"\\MusicVideos"):
-            os.mkdir(os.getcwd()+"\\MusicVideos")
-        video.save(os.getcwd()+f"\\MusicVideos\\{self.save_file}.pickle")
-        return video.write_to_video_file(os.getcwd()+f"\\MusicVideos\\{self.save_file}.mkv")
+        if not os.path.exists(os.getcwd() + "\\MusicVideos"):
+            os.mkdir(os.getcwd() + "\\MusicVideos")
+        video.save(os.getcwd() + f"\\MusicVideos\\{self.save_file}.pickle")
+        return video.write_to_video_file(os.getcwd() + f"\\MusicVideos\\{self.save_file}.mkv")
 
     def generate_preview(self):
         preview = self.generator.preview_from_events(self.beats)
