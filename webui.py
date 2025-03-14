@@ -20,6 +20,7 @@ class BeatGroups:
         def build(slices):
             intervals = []
             splitters = []
+            removers = []
             sliders = []
             for i in range(len(slices)):
                 with gr.Row(variant="compact"):
@@ -40,10 +41,12 @@ class BeatGroups:
                                                        maximum=(chunk_value-chunk_start)-1,
                                                        precision=0,
                                                        interactive=True))
-                            splitters.append(gr.Button("Split"))
+                            splitters.append(gr.Button("Split", interactive=chunk_value-chunk_start>4))
+                            removers.append(gr.Button("Remove", interactive=(i != len(slices)-1 and len(slices) > 2)))
+
                         with gr.Row(equal_height=True):
                             sliders.append(gr.Slider(label="End Of Slice",
-                                                     minimum=chunk_start + 1,
+                                                     minimum=chunk_start + 2,
                                                      maximum=chunk_end,
                                                      value=chunk_value,
                                                      step=1,
@@ -93,6 +96,23 @@ class BeatGroups:
                                 new_slices.append({'start': int(s1_end + 1), 'end': int(slice_end), 'interval': min(s['interval'], int(slice_end-s1_end))})
                             else:
                                 new_slices.append(s)
+                    return new_slices
+
+            # Update self.slices when a remove button is clicked
+            for i, btn in enumerate(removers):
+                @btn.click(inputs=[self.slices, sliders[i]], outputs=[self.slices])
+                def remove_slice(old_slices, slice_remove):
+                    new_slices = []
+                    skip = False
+                    for j, s in enumerate(old_slices):
+                        if s['end'] == slice_remove:
+                            new_slices.append({'start': s['start'], 'end': old_slices[j+1]['end'],
+                                               'interval': max(s['interval'], old_slices[j+1]['interval'])})
+                            skip = True
+                        elif skip:
+                            skip = False
+                        else:
+                            new_slices.append(s)
                     return new_slices
 
             # Update self.slices when a slider is changed
