@@ -18,25 +18,26 @@ class BeatGroups:
         @gr.render(inputs=self.slices)
         def build(slices):
             sliders = []
+            splitters = []
             for i in range(len(slices)):
-                chunk_start = slices[i]['start']
+                chunk_start = int(slices[i]['start'])
                 if i == len(slices) - 1:
-                    self.end = chunk_end = chunk_value = slices[i]['end']
-                    print(chunk_start, chunk_end)
-                    gr.Slider(label=f"({chunk_start}, {chunk_end})",
-                              minimum=chunk_start + 1,
-                              maximum=chunk_end,
-                              value=chunk_value,
-                              step=1,
-                              interactive=False)
+                    self.end = chunk_end = chunk_value = int(slices[i]['end'])
+                    end_slice = gr.Slider(label=f"({chunk_start}, {chunk_value})",
+                                          minimum=chunk_start + 1,
+                                          maximum=chunk_end,
+                                          value=chunk_value,
+                                          step=1,
+                                          interactive=False)
                 else:
-                    chunk_end = slices[i + 1]['end'] - 2
-                    chunk_value = slices[i]['end']
-                    sliders.append(gr.Slider(label=f"({chunk_start}, {chunk_end})",
+                    chunk_end = int(slices[i + 1]['end'] - 2)
+                    chunk_value = int(slices[i]['end'])
+                    sliders.append(gr.Slider(label=f"({chunk_start}, {chunk_value})",
                                              minimum=chunk_start + 1,
                                              maximum=chunk_end,
                                              step=1,
                                              value=chunk_value))
+                splitters.append(gr.Button("Split"))
 
             # noinspection PyTypeChecker
             @gr.on(triggers=[slider.release for slider in sliders], inputs=sliders, outputs=self.slices)
@@ -45,10 +46,44 @@ class BeatGroups:
                 slice_end = -1
                 for i in range(len(inputs)):
                     slice_start = int(slice_end + 1)
-                    slice_end = inputs[i]
-                    new_slices.append({'start': slice_start, 'end': slice_end})
+                    slice_end = int(inputs[i])
+                    new_slices.append({'start': int(slice_start), 'end': int(slice_end)})
                 new_slices.append({'start': int(slice_end + 1), 'end': self.end})
                 return new_slices
+
+            for i, btn in enumerate(splitters):
+                input_slices = [self.slices]
+                if i > 0:
+                    input_slices.append(sliders[i - 1])
+                if i == len(sliders):
+                    input_slices.append(end_slice)
+                else:
+                    input_slices.append(sliders[i])
+
+                @btn.click(inputs=input_slices, outputs=[self.slices])
+                def split_slice(*slice_list):
+                    slice_split = slice_list[1:]
+                    old_slices = slice_list[0]
+                    new_slices = []
+                    if len(slice_split) == 1:
+                        for j, s in enumerate(old_slices):
+                            if j == 0:
+                                s1_end = s['start'] + ((s['end'] - s['start']) // 2)
+                                new_slices.append({'start': 0, 'end': int(s1_end)})
+                                new_slices.append({'start': int(s1_end + 1), 'end': int(s['end'])})
+                            else:
+                                new_slices.append(s)
+                    else:
+                        for s in old_slices:
+                            if s['end'] == slice_split[1]:
+                                slice_start = slice_split[0] + 1
+                                slice_end = slice_split[1]
+                                s1_end = slice_start + ((slice_end - slice_start) // 2)
+                                new_slices.append({'start': int(slice_start), 'end': int(s1_end)})
+                                new_slices.append({'start': int(s1_end + 1), 'end': int(slice_end)})
+                            else:
+                                new_slices.append(s)
+                    return new_slices
 
     @staticmethod
     def generate_slices_from_end(end):
@@ -165,12 +200,12 @@ class UI:
                               ])
             self.audio.clear(self.de_init_video_gen,
                              outputs=[
-                                self.beat_interval,
-                                self.use_groups,
-                                self.group_accordian,
-                                self.preview_button,
-                                self.clips,
-                                self.generate_button
+                                 self.beat_interval,
+                                 self.use_groups,
+                                 self.group_accordian,
+                                 self.preview_button,
+                                 self.clips,
+                                 self.generate_button
                              ])
 
             self.use_groups.change(self.toggle_beat_groups,
