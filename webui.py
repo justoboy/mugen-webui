@@ -11,54 +11,64 @@ from mugen.video.filters import VideoFilter
 
 
 class BeatGroups:
-    def __init__(self, end=5):
+    def __init__(self, end=100):
         self.end = end
         self.slices = gr.State(self.generate_slices_from_end(end))
 
+        #Re-Render beat groups when self.slices is changed
         @gr.render(inputs=self.slices)
         def build(slices):
-            sliders = []
+            intervals = []
             splitters = []
+            sliders = []
             for i in range(len(slices)):
-                chunk_start = int(slices[i]['start'])
-                if i == len(slices) - 1:
-                    self.end = chunk_end = chunk_value = int(slices[i]['end'])
-                    end_slice = gr.Slider(label=f"({chunk_start}, {chunk_value})",
-                                          minimum=chunk_start + 1,
-                                          maximum=chunk_end,
-                                          value=chunk_value,
-                                          step=1,
-                                          interactive=False)
-                else:
-                    chunk_end = int(slices[i + 1]['end'] - 2)
-                    chunk_value = int(slices[i]['end'])
-                    sliders.append(gr.Slider(label=f"({chunk_start}, {chunk_value})",
-                                             minimum=chunk_start + 1,
-                                             maximum=chunk_end,
-                                             step=1,
-                                             value=chunk_value))
-                splitters.append(gr.Button("Split"))
+                with gr.Row(variant="compact"):
+                    with gr.Column():
+                        chunk_start = int(slices[i]['start'])
+                        if i == len(slices) - 1:
+                            self.end = chunk_end = chunk_value = int(slices[i]['end'])
+                        else:
+                            chunk_end = int(slices[i + 1]['end'] - 2)
+                            chunk_value = int(slices[i]['end'])
 
+                        with gr.Row():
+                            gr.Markdown(f"# ({chunk_start}, {chunk_value})")
+                        with gr.Row(equal_height=True):
+                            intervals.append(gr.Number(label="Beat Interval",
+                                                       value=slices[i]['interval'],
+                                                       minimum=1,
+                                                       maximum=(chunk_value-chunk_start)-1,
+                                                       precision=0,
+                                                       interactive=True))
+                            splitters.append(gr.Button("Split"))
+                        with gr.Row(equal_height=True):
+                            sliders.append(gr.Slider(label="End Of Slice",
+                                                     minimum=chunk_start + 1,
+                                                     maximum=chunk_end,
+                                                     value=chunk_value,
+                                                     step=1,
+                                                     interactive=(chunk_value != chunk_end)))
+
+            # Update self.slices when an interval is changed
             # noinspection PyTypeChecker
-            @gr.on(triggers=[slider.release for slider in sliders], inputs=sliders, outputs=self.slices)
-            def update_slices(*inputs):
+            @gr.on(triggers=[interval.input for interval in intervals], inputs=intervals + [self.slices],
+                   outputs=self.slices)
+            def update_intervals(*inputs):
+                old_slices = inputs[-1]
+                new_intervals = inputs[:-1]
                 new_slices = []
-                slice_end = -1
-                for i in range(len(inputs)):
-                    slice_start = int(slice_end + 1)
-                    slice_end = int(inputs[i])
-                    new_slices.append({'start': int(slice_start), 'end': int(slice_end)})
-                new_slices.append({'start': int(slice_end + 1), 'end': self.end})
+                for i in range(len(new_intervals)):
+                    new_slices.append(
+                        {'start': old_slices[i]['start'], 'end': old_slices[i]['end'],
+                         'interval': new_intervals[i]})
                 return new_slices
 
+            # Update self.slices when a split button is clicked
             for i, btn in enumerate(splitters):
                 input_slices = [self.slices]
                 if i > 0:
                     input_slices.append(sliders[i - 1])
-                if i == len(sliders):
-                    input_slices.append(end_slice)
-                else:
-                    input_slices.append(sliders[i])
+                input_slices.append(sliders[i])
 
                 @btn.click(inputs=input_slices, outputs=[self.slices])
                 def split_slice(*slice_list):
@@ -69,8 +79,8 @@ class BeatGroups:
                         for j, s in enumerate(old_slices):
                             if j == 0:
                                 s1_end = s['start'] + ((s['end'] - s['start']) // 2)
-                                new_slices.append({'start': 0, 'end': int(s1_end)})
-                                new_slices.append({'start': int(s1_end + 1), 'end': int(s['end'])})
+                                new_slices.append({'start': 0, 'end': int(s1_end), 'interval': min(s['interval'], int(s1_end-1))})
+                                new_slices.append({'start': int(s1_end + 1), 'end': int(s['end']), 'interval': min(s['interval'], int(s['end']-s1_end))})
                             else:
                                 new_slices.append(s)
                     else:
@@ -79,16 +89,31 @@ class BeatGroups:
                                 slice_start = slice_split[0] + 1
                                 slice_end = slice_split[1]
                                 s1_end = slice_start + ((slice_end - slice_start) // 2)
-                                new_slices.append({'start': int(slice_start), 'end': int(s1_end)})
-                                new_slices.append({'start': int(s1_end + 1), 'end': int(slice_end)})
+                                new_slices.append({'start': int(slice_start), 'end': int(s1_end), 'interval': min(s['interval'], int(s1_end-slice_start-1))})
+                                new_slices.append({'start': int(s1_end + 1), 'end': int(slice_end), 'interval': min(s['interval'], int(slice_end-s1_end))})
                             else:
                                 new_slices.append(s)
                     return new_slices
 
+            # Update self.slices when a slider is changed
+            # noinspection PyTypeChecker
+            @gr.on(triggers=[slider.release for slider in sliders], inputs=sliders+[self.slices], outputs=self.slices)
+            def update_slices(*inputs):
+                old_slices = inputs[-1]
+                slice_ends = inputs[:-1]
+                new_slices = []
+                slice_end = -1
+                for i in range(len(slice_ends)):
+                    slice_start = int(slice_end + 1)
+                    slice_end = int(inputs[i])
+                    new_slices.append({'start': int(slice_start), 'end': int(slice_end), 'interval': min(old_slices[i]['interval'], int(slice_end-slice_start-1))})
+                return new_slices
+
+
     @staticmethod
     def generate_slices_from_end(end):
         midpoint = end // 2
-        return [{'start': 0, 'end': midpoint}, {'start': midpoint + 1, 'end': int(end)}]
+        return [{'start': 0, 'end': midpoint, 'interval': min(4, midpoint-1)}, {'start': midpoint + 1, 'end': int(end), 'interval': min(4, int(end-midpoint))}]
 
 
 class UI:
