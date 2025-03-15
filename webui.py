@@ -362,10 +362,10 @@ class UI:
         gr.Warning("Has Text filter disabled.")
         gr.Warning("Tesseract is either not installed or not in your PATH.")
 
-    def change_allow_repeats(self, allowed):
+    def change_allow_repeats(self, allowed: bool):
         self.update_settings({"allow_repeats": allowed})
 
-    def change_filters(self, text, cut, contrast):
+    def change_filters(self, text: bool, cut: bool, contrast: bool):
         self.update_settings({"has_text": text, "has_cut": cut, "has_low_contrast": contrast})
 
     def generate(self, pre_process_clips: bool, progress=gr.Progress(track_tqdm=True)):
@@ -395,7 +395,7 @@ class UI:
         return video.write_to_video_file(os.getcwd() + f"\\MusicVideos\\{self.save_file}.mkv")
 
     def generate_preview(self):
-        preview = self.generator.preview_from_events(self.beats)
+        preview = self.generator.preview_from_events(self.beats, size=(50, 50))
         preview.write_to_video_file("preview.mkv")
         return "preview.mkv"
 

@@ -253,7 +253,7 @@ class MusicVideoGenerator:
         return video_segments, rejected_video_segments
 
     @use_temporary_file_fallback("output_path", ".mp4")
-    def preview_from_events(self, events: Union[EventList, List[TIME_FORMAT]]):
+    def preview_from_events(self, events: Union[EventList, List[TIME_FORMAT]], size: Tuple[int]=(600, 300)):
         """
         Creates a new audio file with audible bleeps at event locations
 
@@ -261,6 +261,9 @@ class MusicVideoGenerator:
         ----------
         events
             Events to mark in the audio file.
+
+        size
+            Resolution of video file
 
         output_path
             Path to save the output .wav or .mp4 file
@@ -277,7 +280,7 @@ class MusicVideoGenerator:
         for index, duration in enumerate(events.segment_durations):
             # Alternate between black & white segments
             color = "black" if index % 2 == 0 else "white"
-            composite_segments.append(ColorSegment(color, duration, size=(600, 300)))
+            composite_segments.append(ColorSegment(color, duration, size=size))
 
         preview = MusicVideo(composite_segments, marked_audio_file)
         preview.events = events
