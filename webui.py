@@ -1,7 +1,7 @@
 import glob
 import json
 import os
-from typing import Tuple, List, Union, Any
+from typing import Tuple, List, Union, Any, Dict
 
 import gradio as gr
 from pytesseract.pytesseract import get_tesseract_version, TesseractNotFoundError
@@ -37,7 +37,7 @@ class BeatGroups:
                         with gr.Row(equal_height=True):
                             intervals.append(gr.Number(label="Beat Interval",
                                                        value=slices[i]['interval'],
-                                                       minimum=1,
+                                                       minimum=-10,
                                                        maximum=(chunk_value-chunk_start)-1,
                                                        precision=0,
                                                        interactive=True))
@@ -132,8 +132,8 @@ class BeatGroups:
 
     @staticmethod
     def generate_slices_from_end(end):
-        midpoint = end // 2
-        return [{'start': 0, 'end': midpoint, 'interval': min(4, midpoint-1)}, {'start': midpoint + 1, 'end': int(end), 'interval': min(4, int(end-midpoint))}]
+        midpoint = int(end / 2)
+        return [{'start': 0, 'end': midpoint, 'interval': min(4, int(midpoint-1))}, {'start': int(midpoint + 1), 'end': int(end), 'interval': min(4, int(end-midpoint))}]
 
 
 class UI:
@@ -181,7 +181,7 @@ class UI:
                     self.use_groups = gr.Checkbox(label="Use Groups", value=False, interactive=False)
                     self.beat_interval = gr.Number(label="Beat Interval",
                                                    value=4,
-                                                   minimum=1,
+                                                   minimum=-10,
                                                    precision=0,
                                                    interactive=False)
                     self.group_accordian = gr.Accordion(label="Groups", visible=False)
@@ -233,10 +233,10 @@ class UI:
             with gr.Row():
                 self.output = gr.Video(value="output.mkv")
 
-            self.audio.upload(self.init_video_gen, inputs=[self.audio, self.beat_interval, self.use_groups],
+            self.audio.upload(self.init_video_gen, inputs=[self.audio, self.use_groups, self.beat_interval, self.beat_groups.slices],
                               outputs=[
-                                  self.beat_interval,
                                   self.use_groups,
+                                  self.beat_interval,
                                   self.group_accordian,
                                   self.beat_groups.slices,
                                   self.preview_button,
@@ -254,8 +254,11 @@ class UI:
                              ])
 
             self.use_groups.change(self.toggle_beat_groups,
-                                   inputs=self.use_groups,
+                                   inputs=[self.use_groups, self.beat_interval, self.beat_groups.slices],
                                    outputs=[self.beat_interval, self.group_accordian])
+            self.beat_groups.slices.change(self.init_beats_from_slices,
+                                    inputs=[self.beat_groups.slices],
+                                    outputs=[self.preview_button, self.generate_button])
             self.beat_interval.change(self.init_beats_from_speed,
                                       inputs=[self.beat_interval],
                                       outputs=[self.preview_button, self.generate_button])
@@ -317,12 +320,12 @@ class UI:
         empty = self.clips_is_empty()
         return gr.update(visible=empty), gr.update(root_dir=".\\Clips")
 
-    def init_video_gen(self, file: str, interval: int, use_groups: bool):
+    def init_video_gen(self, file: str, use_groups: bool, interval: int, slices: List[Dict]):
         self.save_file = file.replace('/', '\\').split('\\')[-1][:-4]
         self.generator = MusicVideoGenerator(audio_file=file)
-        self.init_beats_from_speed(interval)
+        self.init_beats(use_groups, interval, slices)
         return (gr.update(interactive=True),
-                gr.update(interactive=True),
+                gr.update(interactive=True, visible=not use_groups),
                 gr.update(visible=use_groups),
                 self.beat_groups.generate_slices_from_end(end=self.beats.end),
                 gr.update(interactive=True),
@@ -338,21 +341,37 @@ class UI:
                 gr.update(interactive=False, value=[]),
                 gr.update(interactive=False))
 
-    @staticmethod
-    def toggle_beat_groups(on: bool):
+    def toggle_beat_groups(self, on: bool, interval: int, slices: List[Dict]):
+        self.init_beats(on, interval, slices)
         return gr.update(visible=not on), gr.update(visible=on)
+
+    @staticmethod
+    def convert_interval(interval: int):
+        if interval > 0:
+            return 1/interval
+        else:
+            return abs(interval)
+
+    def init_beats(self, use_groups: bool, interval: int, slices: List[Dict]):
+        if use_groups:
+            self.init_beats_from_slices(slices)
+        else:
+            self.init_beats_from_speed(interval)
 
     def init_beats_from_speed(self, interval: int):
         self.update_settings({"beat_interval": interval})
         self.beats = self.generator.audio.beats()
-        self.beats.speed_multiply(1 / interval)
-        return gr.update(), gr.update()
+        self.beats.speed_multiply(self.convert_interval(interval))
+        return gr.skip()
 
-    def init_beats_from_slices(self, slices: List[Tuple[int, int, float]]):
+    def init_beats_from_slices(self, slices: List[Dict]):
         beats = self.generator.audio.beats()
-        beat_groups = beats.group_by_slices([(start, end) for start, end, _ in slices])
-        beat_groups.selected_groups.speed_multiply([speed for _, _, speed in slices])
+        indexes = [(gslice['start'], gslice['end']) for gslice in slices]
+        beat_groups = beats.group_by_slices(indexes)
+        intervals = [self.convert_interval(gslice['interval']) for gslice in slices]
+        beat_groups.selected_groups.speed_multiply(intervals)
         self.beats = beat_groups.flatten()
+        return gr.skip()
 
     def init_clips(self, clips: Union[VideoSourceList, List[str]]):
         self.generator.video_sources = VideoSourceList(clips)
