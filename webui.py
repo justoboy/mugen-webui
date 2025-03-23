@@ -11,9 +11,9 @@ from mugen.video.filters import VideoFilter
 
 
 class BeatGroups:
-    def __init__(self, end=100):
-        self.end = end
-        self.slices = gr.State(self.generate_slices_from_end(end))
+    def __init__(self, count=100):
+        self.count = count
+        self.slices = gr.State(self.generate_slices_from_count(count))
 
         #Re-Render beat groups when self.slices is changed
         @gr.render(inputs=self.slices)
@@ -131,9 +131,10 @@ class BeatGroups:
 
 
     @staticmethod
-    def generate_slices_from_end(end):
-        midpoint = int(end / 2)
-        return [{'start': 0, 'end': midpoint, 'interval': min(4, int(midpoint-1))}, {'start': int(midpoint + 1), 'end': int(end), 'interval': min(4, int(end-midpoint))}]
+    def generate_slices_from_count(count):
+        count -= 1
+        midpoint = int(count / 2)
+        return [{'start': 0, 'end': midpoint, 'interval': min(4, int(midpoint-1))}, {'start': int(midpoint + 1), 'end': int(count), 'interval': min(4, int(count-midpoint))}]
 
 
 class UI:
@@ -327,7 +328,7 @@ class UI:
         return (gr.update(interactive=True),
                 gr.update(interactive=True, visible=not use_groups),
                 gr.update(visible=use_groups),
-                self.beat_groups.generate_slices_from_end(end=self.beats.end),
+                self.beat_groups.generate_slices_from_count(count=len(self.generator.audio.beats())),
                 gr.update(interactive=True),
                 gr.update(interactive=True),
                 gr.update(interactive=True))
@@ -366,7 +367,7 @@ class UI:
 
     def init_beats_from_slices(self, slices: List[Dict]):
         beats = self.generator.audio.beats()
-        indexes = [(gslice['start'], gslice['end']) for gslice in slices]
+        indexes = [(gslice['start'], gslice['end']+1) for gslice in slices]
         beat_groups = beats.group_by_slices(indexes)
         intervals = [self.convert_interval(gslice['interval']) for gslice in slices]
         beat_groups.selected_groups.speed_multiply(intervals)
