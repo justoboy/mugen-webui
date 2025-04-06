@@ -35,11 +35,11 @@ class BeatGroups:
                         with gr.Row():
                             gr.Markdown(f"# ({chunk_start}, {chunk_value})")
                         with gr.Row(equal_height=True):
-                            intervals.append(gr.Number(label="Beat Interval",
+                            intervals.append(gr.Slider(label="Beat Interval",
                                                        value=slices[i]['interval'],
                                                        minimum=-10,
                                                        maximum=(chunk_value-chunk_start)-1,
-                                                       precision=0,
+                                                       step=1,
                                                        interactive=True))
                             splitters.append(gr.Button("Split", interactive=chunk_value-chunk_start>4))
                             removers.append(gr.Button("Remove", interactive=(i != len(slices)-1 and len(slices) > 2)))
@@ -54,7 +54,7 @@ class BeatGroups:
 
             # Update self.slices when an interval is changed
             # noinspection PyTypeChecker
-            @gr.on(triggers=[interval.input for interval in intervals], inputs=intervals + [self.slices],
+            @gr.on(triggers=[interval.release for interval in intervals], inputs=intervals + [self.slices],
                    outputs=self.slices)
             def update_intervals(*inputs):
                 old_slices = inputs[-1]
