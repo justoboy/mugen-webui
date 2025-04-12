@@ -282,7 +282,7 @@ class UI:
 
             self.generate_button.click(self.generate, inputs=[self.pre_process_clips], outputs=[self.output])
 
-        self.demo.launch()
+        self.demo.launch(inbrowser=True)
 
     def load_settings(self):
         try:
