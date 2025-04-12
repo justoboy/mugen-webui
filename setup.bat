@@ -19,4 +19,10 @@ call .\venv\Scripts\activate.bat
 :: Upgrade pip and install required packages
 python -m pip install --upgrade pip
 python -m pip install -r .\requirements.txt
-pause
+echo Setup Complete!
+choice /C:YN /M:"Start Webui?"
+if errorlevel 2 (
+    break
+) else if errorlevel 1 (
+    call start.bat
+)
