@@ -14,8 +14,10 @@ class BeatGroups:
     def __init__(self, count=100):
         self.count = count
         self.slices = gr.State(self.generate_slices_from_count(count))
+        self.beats = None
+        self.audio = None
 
-        #Re-Render beat groups when self.slices is changed
+        # Re-Render beat groups when self.slices is changed
         @gr.render(inputs=self.slices)
         def build(slices):
             intervals = []
@@ -25,12 +27,12 @@ class BeatGroups:
             for i in range(len(slices)):
                 with gr.Row(variant="compact"):
                     with gr.Column():
-                        chunk_start = int(slices[i]['start'])
+                        chunk_start = int(slices[i]['start_index'])
                         if i == len(slices) - 1:
-                            self.end = chunk_end = chunk_value = int(slices[i]['end'])
+                            self.end = chunk_end = chunk_value = int(slices[i]['end_index'])
                         else:
-                            chunk_end = int(slices[i + 1]['end'] - 2)
-                            chunk_value = int(slices[i]['end'])
+                            chunk_end = int(slices[i + 1]['end_index'] - 2)
+                            chunk_value = int(slices[i]['end_index'])
 
                         with gr.Row():
                             gr.Markdown(f"# ({chunk_start}, {chunk_value})")
@@ -38,11 +40,11 @@ class BeatGroups:
                             intervals.append(gr.Slider(label="Beat Interval",
                                                        value=slices[i]['interval'],
                                                        minimum=-10,
-                                                       maximum=(chunk_value-chunk_start)-1,
+                                                       maximum=(chunk_value - chunk_start) - 1,
                                                        step=1,
                                                        interactive=True))
-                            splitters.append(gr.Button("Split", interactive=chunk_value-chunk_start>4))
-                            removers.append(gr.Button("Remove", interactive=(i != len(slices)-1 and len(slices) > 2)))
+                            splitters.append(gr.Button("Split", interactive=chunk_value - chunk_start > 4))
+                            removers.append(gr.Button("Remove", interactive=(i != len(slices) - 1 and len(slices) > 2)))
 
                         with gr.Row(equal_height=True):
                             sliders.append(gr.Slider(label="End Of Slice",
@@ -51,6 +53,10 @@ class BeatGroups:
                                                      value=chunk_value,
                                                      step=1,
                                                      interactive=(chunk_value != chunk_end)))
+                            if self.audio is not None:
+                                subclip = self.audio.samples[int(slices[i]['start_time'] * self.audio.sample_rate):int(slices[i]['end_time'] * self.audio.sample_rate)]
+                                gr.Audio(value=(self.audio.sample_rate, subclip))
+
 
             # Update self.slices when an interval is changed
             # noinspection PyTypeChecker
@@ -62,7 +68,8 @@ class BeatGroups:
                 new_slices = []
                 for i in range(len(new_intervals)):
                     new_slices.append(
-                        {'start': old_slices[i]['start'], 'end': old_slices[i]['end'],
+                        {'start_index': old_slices[i]['start_index'], 'end_index': old_slices[i]['end_index'],
+                         'start_time': old_slices[i]['start_time'], 'end_time': old_slices[i]['end_time'],
                          'interval': new_intervals[i]})
                 return new_slices
 
@@ -81,19 +88,34 @@ class BeatGroups:
                     if len(slice_split) == 1:
                         for j, s in enumerate(old_slices):
                             if j == 0:
-                                s1_end = s['start'] + ((s['end'] - s['start']) // 2)
-                                new_slices.append({'start': 0, 'end': int(s1_end), 'interval': min(s['interval'], int(s1_end-1))})
-                                new_slices.append({'start': int(s1_end + 1), 'end': int(s['end']), 'interval': min(s['interval'], int(s['end']-s1_end))})
+                                s1_end = s['start_index'] + ((s['end_index'] - s['start_index']) // 2)
+                                new_slices.append({'start_index': 0, 'end_index': int(s1_end),
+                                                   'start_time': 0, 'end_time': self.beats[int(s1_end)].location,
+                                                   'interval': min(s['interval'], int(s1_end - 1))})
+                                new_slices.append({'start_index': int(s1_end + 1),
+                                                   'end_index': int(s['end_index']),
+                                                   'start_time': self.beats[int(s1_end)].location,
+                                                   'end_time': self.beats[int(s['end_index'])].location,
+                                                   'interval': min(s['interval'], int(s['end_index'] - s1_end))})
                             else:
                                 new_slices.append(s)
                     else:
                         for s in old_slices:
-                            if s['end'] == slice_split[1]:
+                            if s['end_index'] == slice_split[1]:
                                 slice_start = slice_split[0] + 1
                                 slice_end = slice_split[1]
                                 s1_end = slice_start + ((slice_end - slice_start) // 2)
-                                new_slices.append({'start': int(slice_start), 'end': int(s1_end), 'interval': min(s['interval'], int(s1_end-slice_start-1))})
-                                new_slices.append({'start': int(s1_end + 1), 'end': int(slice_end), 'interval': min(s['interval'], int(slice_end-s1_end))})
+                                new_slices.append({'start_index': int(slice_start),
+                                                   'end_index': int(s1_end),
+                                                   'start_time': self.beats[int(slice_start)].location,
+                                                   'end_time': self.beats[int(s1_end)].location,
+                                                   'interval': min(s['interval'], int(s1_end - slice_start - 1))})
+                                new_slices.append({'start_index': int(s1_end + 1),
+                                                   'end_index': int(slice_end),
+                                                   'start_time': self.beats[int(s1_end)].location,
+                                                   'end_time': -1 if int(slice_end) == len(self.beats) - 1 else
+                                                   self.beats[int(slice_end)].location,
+                                                   'interval': min(s['interval'], int(slice_end - s1_end))})
                             else:
                                 new_slices.append(s)
                     return new_slices
@@ -106,8 +128,10 @@ class BeatGroups:
                     skip = False
                     for j, s in enumerate(old_slices):
                         if s['end'] == slice_remove:
-                            new_slices.append({'start': s['start'], 'end': old_slices[j+1]['end'],
-                                               'interval': max(s['interval'], old_slices[j+1]['interval'])})
+                            new_slices.append(
+                                {'start_index': s['start_index'], 'end_index': old_slices[j + 1]['end_index'],
+                                 'start_time': s['start_time'], 'end_time': old_slices[j + 1]['end_time'],
+                                 'interval': max(s['interval'], old_slices[j + 1]['interval'])})
                             skip = True
                         elif skip:
                             skip = False
@@ -117,7 +141,7 @@ class BeatGroups:
 
             # Update self.slices when a slider is changed
             # noinspection PyTypeChecker
-            @gr.on(triggers=[slider.release for slider in sliders], inputs=sliders+[self.slices], outputs=self.slices)
+            @gr.on(triggers=[slider.release for slider in sliders], inputs=sliders + [self.slices], outputs=self.slices)
             def update_slices(*inputs):
                 old_slices = inputs[-1]
                 slice_ends = inputs[:-1]
@@ -125,16 +149,40 @@ class BeatGroups:
                 slice_end = -1
                 for i in range(len(slice_ends)):
                     slice_start = int(slice_end + 1)
+                    if i == 0:
+                        start_time = 0
+                    else:
+                        start_time = self.beats[slice_end].location
                     slice_end = int(inputs[i])
-                    new_slices.append({'start': int(slice_start), 'end': int(slice_end), 'interval': min(old_slices[i]['interval'], int(slice_end-slice_start-1))})
+                    if i == len(slice_ends) - 1:
+                        end_time = -1
+                    else:
+                        end_time = self.beats[slice_end].location
+                    new_slices.append({'start_index': slice_start, 'end_index': slice_end,
+                                       'start_time': start_time, 'end_time': end_time,
+                                       'interval': min(old_slices[i]['interval'], int(slice_end - slice_start - 1))})
                 return new_slices
 
+    def generate_slices_from_audio(self, audio):
+        self.audio = audio
+        self.beats = audio.beats()
+        count = len(self.beats) - 1
+        midpoint = int(count / 2)
+        return [{'start_index': 0, 'end_index': midpoint, 'start_time': 0, 'end_time': self.beats[midpoint].location,
+                 'interval': min(4, int(midpoint - 1))},
+                {'start_index': int(midpoint + 1), 'end_index': int(count),
+                 'start_time': self.beats[midpoint].location, 'end_time': -1,
+                 'interval': min(4, int(count - midpoint))}]
 
     @staticmethod
     def generate_slices_from_count(count):
         count -= 1
         midpoint = int(count / 2)
-        return [{'start': 0, 'end': midpoint, 'interval': min(4, int(midpoint-1))}, {'start': int(midpoint + 1), 'end': int(count), 'interval': min(4, int(count-midpoint))}]
+        return [{'start_index': 0, 'end_index': midpoint, 'start_time': 0, 'end_time': midpoint,
+                 'interval': min(4, int(midpoint - 1))},
+                {'start_index': int(midpoint + 1), 'end_index': int(count),
+                 'start_time': int(midpoint + 1), 'end_time': int(count),
+                 'interval': min(4, int(count - midpoint))}]
 
 
 class UI:
@@ -234,7 +282,8 @@ class UI:
             with gr.Row():
                 self.output = gr.Video(value="output.mkv")
 
-            self.audio.upload(self.init_video_gen, inputs=[self.audio, self.use_groups, self.beat_interval, self.beat_groups.slices],
+            self.audio.upload(self.init_video_gen,
+                              inputs=[self.audio, self.use_groups, self.beat_interval, self.beat_groups.slices],
                               outputs=[
                                   self.use_groups,
                                   self.beat_interval,
@@ -258,8 +307,8 @@ class UI:
                                    inputs=[self.use_groups, self.beat_interval, self.beat_groups.slices],
                                    outputs=[self.beat_interval, self.group_accordian])
             self.beat_groups.slices.change(self.init_beats_from_slices,
-                                    inputs=[self.beat_groups.slices],
-                                    outputs=[self.preview_button, self.generate_button])
+                                           inputs=[self.beat_groups.slices],
+                                           outputs=[self.preview_button, self.generate_button])
             self.beat_interval.change(self.init_beats_from_speed,
                                       inputs=[self.beat_interval],
                                       outputs=[self.preview_button, self.generate_button])
@@ -328,7 +377,7 @@ class UI:
         return (gr.update(interactive=True),
                 gr.update(interactive=True, visible=not use_groups),
                 gr.update(visible=use_groups),
-                self.beat_groups.generate_slices_from_count(count=len(self.generator.audio.beats())),
+                self.beat_groups.generate_slices_from_audio(self.generator.audio),
                 gr.update(interactive=True),
                 gr.update(interactive=True),
                 gr.update(interactive=True))
@@ -349,7 +398,7 @@ class UI:
     @staticmethod
     def convert_interval(interval: int):
         if interval > 0:
-            return 1/interval
+            return 1 / interval
         else:
             return abs(interval)
 
@@ -367,7 +416,7 @@ class UI:
 
     def init_beats_from_slices(self, slices: List[Dict]):
         beats = self.generator.audio.beats()
-        indexes = [(gslice['start'], gslice['end']+1) for gslice in slices]
+        indexes = [(gslice['start_index'], gslice['end_index'] + 1) for gslice in slices]
         beat_groups = beats.group_by_slices(indexes)
         intervals = [self.convert_interval(gslice['interval']) for gslice in slices]
         beat_groups.selected_groups.speed_multiply(intervals)
